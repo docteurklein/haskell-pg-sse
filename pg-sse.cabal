@@ -1,0 +1,29 @@
+cabal-version:       >=1.10
+name:                pg-sse
+version:             0.1.0.0
+license-file:        LICENSE
+author:              Florian Klein
+maintainer:          florian.klein@free.fr
+build-type:          Simple
+extra-source-files:  CHANGELOG.md
+
+executable pg-sse
+  main-is:             Main.hs
+  build-depends:       base >=4.13 && <4.14
+  -- hs-source-dirs:
+  default-language: Haskell2010
+  default-extensions:
+      OverloadedStrings
+    , DeriveGeneric
+
+  build-depends:
+      base
+    , aeson
+    , async
+    , bytestring
+    , hasql
+    , hasql-notifications
+    , text
+    , wai
+    , wai-extra
+    , warp
