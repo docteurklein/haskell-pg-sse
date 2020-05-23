@@ -27,7 +27,7 @@ import Data.Aeson
 
 data Query = Query {
     sql :: Text
-  , params  :: [Text]
+  , params :: [Text]
 } deriving (Generic, Show)
 
 instance FromJSON Query
@@ -44,7 +44,7 @@ eventChan connListen conn chan = waitForNotifications (handler conn) connListen
                         Left e -> print e
                         Right content ->
                             writeChan chan (ServerEvent Nothing Nothing [string8 $ unpack content])
-                Nothing -> pure ()
+                Nothing -> print payload
 
         select sql = Statement (encodeUtf8 sql) encoder decoder True where
           encoder = Encoders.param (Encoders.nonNullable Encoders.text)
@@ -60,6 +60,11 @@ main = do
     run 8080 (gzip def $ headers $ eventSourceAppChan chan)
     where
       headers :: Middleware
-      headers = addHeaders [ ("X-Accel-Buffering", "no")
-                           , ("Cache-Control", "no-cache")
-                           ]
+      headers = addHeaders [
+          ("X-Accel-Buffering", "no")
+        , ("Cache-Control", "no-cache")
+        , ("Access-Control-Allow-Origin", "*")
+        , ("Access-Control-Allow-Methods", "OPTIONS, GET, POST, PUT, PATCH, DELETE")
+        , ("Access-Control-Allow-Headers", "Authorization, Accept")
+        , ("Access-Control-Expose-Headers", "Cache-Control, Content-Language, Content-Type, Expires, Last-Modified, Pragma, Link")
+        ]
