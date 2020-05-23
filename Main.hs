@@ -42,7 +42,8 @@ eventChan connListen conn chan = waitForNotifications (handler conn) connListen
                     result <- Session.run (Session.statement (head $ params query') (select $ sql query')) conn
                     case result of
                         Left e -> print e
-                        Right content ->
+                        Right content -> do
+                            print $ content
                             writeChan chan (ServerEvent Nothing Nothing [string8 $ unpack content])
                 Nothing -> print payload
 
