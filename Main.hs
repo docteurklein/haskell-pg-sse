@@ -1,37 +1,37 @@
 module Main where
 
-import Data.ByteString.Builder (string8)
-import Data.ByteString.Lazy.Char8 (fromStrict)
-import Data.ByteString.Char8 (pack)
-import Data.ByteString (ByteString(..))
-import Data.Text (Text(..), unpack)
-import Data.Text.Encoding (encodeUtf8)
 import Control.Concurrent.Async (async)
 import Control.Concurrent.Chan
 import Control.Monad (forever, void, forM_)
+import Data.Aeson (FromJSON, decode)
+import Data.ByteString (ByteString(..))
+import Data.ByteString.Builder (string8)
+import Data.ByteString.Char8 (pack)
+import Data.ByteString.Lazy.Char8 (fromStrict)
+import Data.Text (Text(..), unpack)
+import Data.Text.Encoding (encodeUtf8)
+import GHC.Generics (Generic)
+import Hasql.Connection (acquire, Connection)
+import Hasql.Decoders (rowVector, column)
+import Hasql.Encoders (param, foldableArray, nonNullable, text)
+import Hasql.Notifications (listen, unlisten, toPgIdentifier, waitForNotifications)
+import Hasql.Statement (Statement(..))
 import Network.Wai (Application, Middleware)
 import Network.Wai.EventSource (ServerEvent(..), eventSourceAppChan)
 import Network.Wai.Handler.Warp (run)
 import Network.Wai.Middleware.AddHeaders (addHeaders)
 import Network.Wai.Middleware.Gzip (gzip, def)
-import Hasql.Connection (acquire, Connection)
-import Hasql.Statement (Statement(..))
-import qualified Hasql.Encoders as E
+import System.IO (hPutStrLn, stderr)
 import qualified Hasql.Decoders as D
 import qualified Hasql.Session as Session
-import Hasql.Notifications (listen, unlisten, toPgIdentifier, waitForNotifications)
-import GHC.Generics
-import Data.Aeson
-import System.IO (hPutStrLn, stderr)
 
 
 data Query = Query {
     sql :: Text
   , params :: [Text]
   , role :: Maybe Text
-} deriving (Generic, Show)
-
-instance FromJSON Query
+} deriving stock    (Generic, Show)
+  deriving anyclass FromJSON
 
 eventChan :: Connection -> Connection -> Chan ServerEvent -> IO ()
 eventChan connListen conn chan = waitForNotifications (handler conn) connListen
@@ -52,8 +52,8 @@ eventChan connListen conn chan = waitForNotifications (handler conn) connListen
                             forM_ rows $ \x -> writeChan chan (ServerEvent Nothing Nothing [string8 $ unpack x])
 
         select sql = Statement (encodeUtf8 sql) encoder decoder True where
-          encoder = E.param (E.nonNullable (E.foldableArray (E.nonNullable E.text)))
-          decoder = D.rowVector (D.column (D.nonNullable D.text))
+          encoder = param $ nonNullable $ foldableArray $ nonNullable text
+          decoder = rowVector $ column $ D.nonNullable D.text
 
 main :: IO ()
 main = do

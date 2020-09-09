@@ -14,6 +14,8 @@ executable pg-sse
   default-extensions:
       OverloadedStrings
     , DeriveGeneric
+    , DerivingStrategies
+    , DeriveAnyClass
 
   build-depends:
       base
