@@ -9,10 +9,11 @@ import Data.ByteString (ByteString(..))
 import Data.ByteString.Builder (string8)
 import Data.ByteString.Char8 (pack)
 import Data.ByteString.Lazy.Char8 (fromStrict)
+import Data.Pool (createPool, withResource)
 import Data.Text (Text(..), unpack)
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import GHC.Generics (Generic)
-import Hasql.Connection (acquire, Connection)
+import Hasql.Connection (acquire, release, Connection)
 import Hasql.Decoders (rowVector, column)
 import Hasql.Encoders (param, foldableArray, nonNullable, text)
 import Hasql.Notifications (listen, unlisten, toPgIdentifier, waitForNotifications)
@@ -34,24 +35,20 @@ data Query = Query {
 } deriving stock    (Generic, Show)
   deriving anyclass FromJSON
 
-listenPostgres :: Text -> Connection -> Connection -> Chan Text -> IO ()
-listenPostgres topic connListen conn chan = waitForNotifications (handler conn) connListen
+listenPostgres :: Text -> Connection -> Chan Query -> IO ()
+listenPostgres topic connListen chan = waitForNotifications handler connListen
     where
-        handler conn channel payload = do
+        handler channel payload = do
             when (channel /= encodeUtf8 topic) $ return ()
             let query = decode (fromStrict payload) :: Maybe Query
-            case query of
-                Nothing -> do
-                    hPutStrLn stderr "invalid payload"
-                    print payload
-                Just query' -> do
-                    result <- Session.run (Session.statement (params query') (select $ sql query')) conn
-                    case result of
-                        Left e -> do
-                            hPutStrLn stderr "invalid result"
-                            print e
-                        Right rows -> do
-                            forM_ rows $ writeChan chan
+            maybe id (writeChan chan)
+            -- case query of
+            --     Nothing -> do
+            --         hPutStrLn stderr "invalid payload"
+            --         print payload
+            --     Just query' -> do
+            --         result <- Session.run (Session.statement (params query') (select $ sql query')) conn
+            --         either print (\rows -> forM_ rows $ writeChan chan) result
 
         select sql = Statement (encodeUtf8 sql) encoder decoder True where
           encoder = param $ nonNullable $ foldableArray $ nonNullable text
@@ -59,9 +56,14 @@ listenPostgres topic connListen conn chan = waitForNotifications (handler conn) 
 
 main :: IO ()
 main = do
-    Right conn <- acquire ""
-    hPutStrLn stderr "listening http on 0.0.0.0:8080"
-    run 8080 $ gzip def $ headers $ eventSourceAppChan conn
+    pool <- createPool (acquire "")
+        (either (const (pure ())) release)
+        1 -- stripes
+        60 -- unused connections are kept open for a minute
+        100 -- max. 10 connections open per stripe
+    withResource pool $ either print $ \conn -> do
+            hPutStrLn stderr "listening http on 0.0.0.0:8080"
+            run 8080 $ gzip def $ headers $ eventSourceAppChan conn
     where
         eventSourceAppChan conn req sendResponse = do
             chan <- newChan
@@ -70,11 +72,12 @@ main = do
                 listen connListen $ toPgIdentifier topic
                 print $ "listening topic: "
                 print topic
-                void $ async $ listenPostgres topic connListen conn chan
-            eventSourceAppIO (event chan) req sendResponse
-        event chan = do
-            payload <- readChan chan
-            return $ ServerEvent Nothing Nothing [string8 $ unpack payload]
+                void $ async $ listenPostgres topic connListen chan
+            eventSourceAppIO (event conn chan) req sendResponse
+        event conn chan = do
+            query <- readChan chan
+            result <- Session.run (Session.statement (params query) (select $ sql query)) conn
+            either print (\rows -> forM_ rows $ \payload -> ServerEvent Nothing Nothing [string8 $ unpack payload]) result
 
         headers :: Middleware
         headers = addHeaders [

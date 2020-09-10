@@ -24,6 +24,7 @@ executable pg-sse
     , bytestring
     , hasql
     , hasql-notifications
+    , resource-pool
     , text
     , wai
     , wai-extra
