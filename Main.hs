@@ -34,8 +34,8 @@ data Query = Query {
 } deriving stock    (Generic, Show)
   deriving anyclass FromJSON
 
-eventChan :: Text -> Connection -> Connection -> Chan ServerEvent -> IO ()
-eventChan topic connListen conn chan = waitForNotifications (handler conn) connListen
+listenPostgres :: Text -> Connection -> Connection -> Chan Text -> IO ()
+listenPostgres topic connListen conn chan = waitForNotifications (handler conn) connListen
     where
         handler conn channel payload = do
             when (channel /= encodeUtf8 topic) $ return ()
@@ -51,7 +51,7 @@ eventChan topic connListen conn chan = waitForNotifications (handler conn) connL
                             hPutStrLn stderr "invalid result"
                             print e
                         Right rows -> do
-                            forM_ rows $ \x -> writeChan chan (ServerEvent Nothing Nothing [string8 $ unpack x])
+                            forM_ rows $ writeChan chan
 
         select sql = Statement (encodeUtf8 sql) encoder decoder True where
           encoder = param $ nonNullable $ foldableArray $ nonNullable text
@@ -70,8 +70,11 @@ main = do
                 listen connListen $ toPgIdentifier topic
                 print $ "listening topic: "
                 print topic
-                void $ async $ eventChan topic connListen conn chan
-            eventSourceAppIO (readChan chan) req sendResponse
+                void $ async $ listenPostgres topic connListen conn chan
+            eventSourceAppIO (event chan) req sendResponse
+        event chan = do
+            payload <- readChan chan
+            return $ ServerEvent Nothing Nothing [string8 $ unpack payload]
 
         headers :: Middleware
         headers = addHeaders [
