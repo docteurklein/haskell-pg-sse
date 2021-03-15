@@ -16,6 +16,8 @@ executable pg-sse
     , DeriveGeneric
     , DerivingStrategies
     , DeriveAnyClass
+    , BlockArguments
+    , ImplicitParams
 
   build-depends:
       base
